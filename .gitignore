@@ -1,0 +1,65 @@
+# ----------------------
+# Python
+# ----------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# ----------------------
+# Virtual Environments
+# ----------------------
+venv/
+.venv/
+env/
+ENV/
+
+# ----------------------
+# Environment / Secrets
+# ----------------------
+.env
+*.env
+secrets/
+*.json
+firebase_key.json
+*firebase-adminsdk*.json
+
+# ----------------------
+# Jupyter / Notebooks
+# ----------------------
+.ipynb_checkpoints/
+
+# ----------------------
+# VS Code
+# ----------------------
+.vscode/
+
+# ----------------------
+# OS Files
+# ----------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------
+# ML Models & Artifacts
+# (Keep if you want to track them – otherwise ignore)
+# ----------------------
+# models/*.h5
+# models/*.pkl
+
+# ----------------------
+# Logs & Temp
+# ----------------------
+*.log
+logs/
+tmp/
+temp/
+
+# ----------------------
+# Node / Frontend (if added later)
+# ----------------------
+node_modules/
+dist/
+build/
