@@ -5,11 +5,17 @@ from typing import List
 from datetime import datetime
 import os
 
+from twilio.rest import Client
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+
 # ==============================
 # FIREBASE INITIALIZATION
 # ==============================
 
-# Path to Firebase service account key
 FIREBASE_KEY_PATH = "activitymotiondetection-firebase-adminsdk-fbsvc-3560a9a703.json"
 
 if not firebase_admin._apps:
@@ -17,6 +23,45 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+
+# ==============================
+# TWILIO INITIALIZATION
+# ==============================
+
+twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
+twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
+alert_to = os.getenv("ALERT_PHONE_NUMBER")
+fall_risk_threshold = float(os.getenv("FALL_RISK_THRESHOLD", "50.0"))
+
+if not all([twilio_sid, twilio_token, twilio_from, alert_to]):
+    print("⚠️  Twilio credentials missing in .env – SMS alerts disabled.")
+    twilio_client = None
+else:
+    twilio_client = Client(twilio_sid, twilio_token)
+
+def send_sms_alert(user_id: str, fall_risk: float):
+    if twilio_client is None:
+        print("⚠️  SMS alert skipped (Twilio not configured).")
+        return
+
+    message_body = (
+        f"🚨 HIGH FALL RISK ALERT 🚨\n"
+        f"User: {user_id}\n"
+        f"Fall Risk Score: {fall_risk:.2f}%\n"
+        f"Immediate attention recommended!\n"
+        f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+    )
+
+    try:
+        message = twilio_client.messages.create(
+            body=message_body,
+            from_=twilio_from,
+            to=alert_to
+        )
+        print(f"✅ SMS alert sent! SID: {message.sid}")
+    except Exception as e:
+        print(f"❌ Failed to send SMS: {e}")
 
 # ==============================
 # DATA STRUCTURES
@@ -119,9 +164,7 @@ def push_scores_to_firebase(user_id: str,
         "timestamp": datetime.utcnow().isoformat()
     }
 
-    # Collection auto-creates if not present
     db.collection("risk_scores").add(doc)
-
     print("✅ Risk scores pushed to Firebase")
 
 
@@ -134,16 +177,23 @@ if __name__ == "__main__":
     history = ActivityHistory()
     scorer = RiskScorer()
 
-    # 🔁 Simulating your fall detection output
+       # Simulating events to TRIGGER ALERT: Fall Risk > 50
     simulated_events = [
-        ("Walk", 0.51, True),
-        ("Walk", 0.52, True),
-        ("Static", 0.50, False),
-        ("Transitions", 0.61, False),
-        ("Walk", 0.48, False),
-        ("Exercise", 0.40, False),
-        ("Transitions", 0.58, False),
-        ("Static", 0.45, False)
+        ("Walk", 0.65, True),          # Fall
+        ("Walk", 0.72, True),          # Fall
+        ("Transitions", 0.68, True),   # Fall during transition
+        ("Static", 0.55, False),       # Near-fall
+        ("Transitions", 0.62, False),  # Instability
+        ("Walk", 0.59, False),         # Near-fall
+        ("Transitions", 0.70, True),   # Fall
+        ("Static", 0.48, False),
+        ("Exercise", 0.45, False),
+        ("Walk", 0.50, False),
+        # Extra events to push fall risk over 50
+        ("Transitions", 0.75, True),   # Another fall in transition
+        ("Exercise", 0.60, True),      # Fall during exercise
+        ("Transitions", 0.65, False),  # More instability
+        ("Transitions", 0.70, True),   # One more fall
     ]
 
     for activity, prob, fall in simulated_events:
@@ -164,10 +214,18 @@ if __name__ == "__main__":
     print("Safety Risk Score:", safety_risk)
     print("Rehab Progress Score:", rehab_progress)
 
-    # 🔥 Push to Firebase
+    # Push to Firebase
+    user_id = "Elderly_001"
     push_scores_to_firebase(
-        user_id="Elderly_001",
+        user_id=user_id,
         fall_risk=fall_risk,
         safety_risk=safety_risk,
         rehab_progress=rehab_progress
     )
+
+    # Check threshold and send SMS alert
+    if fall_risk > fall_risk_threshold:
+        print(f"🚨 Fall risk ({fall_risk}) exceeds threshold ({fall_risk_threshold}) – sending alert!")
+        send_sms_alert(user_id, fall_risk)
+    else:
+        print(f"✅ Fall risk ({fall_risk}) is below threshold – no alert sent.")

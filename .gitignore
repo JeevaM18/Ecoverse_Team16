@@ -7,6 +7,8 @@ __pycache__/
 *.pyd
 *.egg-info/
 .eggs/
+*.json
+.env
 
 # ----------------------
 # Virtual Environments
@@ -46,8 +48,9 @@ Thumbs.db
 # ML Models & Artifacts
 # (Keep if you want to track them – otherwise ignore)
 # ----------------------
-# models/*.h5
-# models/*.pkl
+models/*.h5
+models/*.pkl
+models/
 
 # ----------------------
 # Logs & Temp

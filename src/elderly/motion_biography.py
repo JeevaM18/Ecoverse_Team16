@@ -1,7 +1,9 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from dataclasses import dataclass
+
+from src.utils.firebase_client import push_to_firebase
 
 # =========================
 # DATA STRUCTURE
@@ -28,41 +30,58 @@ class MotionBiography:
     # Add events
     # -------------------------
     def add_event(self, event: ActivityEvent):
-        day = event.timestamp.date()
-        self.daily_data[day].append(event)
+        self.daily_data[event.timestamp.date()].append(event)
 
     # -------------------------
     # Daily summary
     # -------------------------
-    def generate_daily_summary(self, day):
+    def generate_daily_summary(self, user_id: str, day):
         events = self.daily_data.get(day, [])
-
         if not events:
             return None
 
         summary = {
+            "user_id": user_id,
             "date": str(day),
             "walking_duration": sum(e.activity == "Walk" for e in events),
             "transition_count": sum(e.activity == "Transitions" for e in events),
             "near_falls": sum(0.45 <= e.fall_prob < 0.7 for e in events),
             "inactivity_time": sum(e.activity == "Static" for e in events),
-            "fall_risk_score": self._compute_fall_risk(events)
+            "fall_risk_score": self._compute_fall_risk(events),
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
+
+        # 🔥 Store daily biography
+        push_to_firebase("elderly_motion_biography_daily", summary)
 
         return summary
 
     # -------------------------
     # Weekly comparison
     # -------------------------
-    def generate_weekly_trend(self, end_day):
+    def generate_weekly_trend(self, user_id: str, end_day):
         this_week = []
         last_week = []
 
         for i in range(7):
             this_week.extend(self.daily_data.get(end_day - timedelta(days=i), []))
-            last_week.extend(self.daily_data.get(end_day - timedelta(days=i+7), []))
+            last_week.extend(self.daily_data.get(end_day - timedelta(days=i + 7), []))
 
-        return self._compare_weeks(this_week, last_week)
+        trend = self._compare_weeks(this_week, last_week)
+        narratives = self.generate_narrative(trend)
+
+        payload = {
+            "user_id": user_id,
+            "week_ending": str(end_day),
+            "trend_metrics": trend,
+            "narratives": narratives,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+        # 🔥 Store weekly biography
+        push_to_firebase("elderly_motion_biography_weekly", payload)
+
+        return payload
 
     # -------------------------
     # Narrative generation
@@ -110,8 +129,7 @@ class MotionBiography:
     def _compare_weeks(self, this_week, last_week):
 
         def extract_metrics(events):
-            total = len(events)
-            if total == 0:
+            if not events:
                 return {"walk": 0, "near_fall": 0, "inactivity": 0}
 
             return {
@@ -142,23 +160,27 @@ class MotionBiography:
 if __name__ == "__main__":
 
     mb = MotionBiography()
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
+    user_id = "ELDER_001"
 
-    # Simulated activity stream (7 days)
+    # Simulated activity stream (14 days)
     for d in range(14):
         day = today - timedelta(days=d)
         for _ in range(50):
             mb.add_event(ActivityEvent(
-                timestamp=datetime.combine(day, datetime.min.time()),
+                timestamp=datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc),
                 activity="Walk" if d < 7 else "Static",
                 fall_prob=0.55 if d < 7 else 0.30,
                 is_fall=False
             ))
 
-    weekly_trend = mb.generate_weekly_trend(today)
-    narratives = mb.generate_narrative(weekly_trend)
+        # Generate daily summary
+        mb.generate_daily_summary(user_id, day)
 
-    print("Weekly Trend:", weekly_trend)
+    # Generate weekly trend
+    weekly_result = mb.generate_weekly_trend(user_id, today)
+
+    print("Weekly Trend Metrics:", weekly_result["trend_metrics"])
     print("Narrative Insights:")
-    for n in narratives:
+    for n in weekly_result["narratives"]:
         print("-", n)

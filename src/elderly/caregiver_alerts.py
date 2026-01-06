@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
+
+from src.utils.firebase_client import push_to_firebase
 
 # =========================
 # DATA STRUCTURES
@@ -24,15 +26,15 @@ class DriftResult:
 
 class CaregiverAlertGenerator:
 
-    def __init__(self):
-        pass
-
     # -------------------------
     # Main alert generator
     # -------------------------
-    def generate_alert(self,
-                       risk_history: List[RiskSnapshot],
-                       drift_result: DriftResult) -> dict:
+    def generate_alert(
+        self,
+        user_id: str,
+        risk_history: List[RiskSnapshot],
+        drift_result: DriftResult
+    ) -> dict:
 
         messages = []
         severity = "Low"
@@ -75,11 +77,19 @@ class CaregiverAlertGenerator:
         else:
             messages.append("Mobility stable. No immediate intervention required.")
 
-        return {
-            "timestamp": datetime.utcnow().isoformat(),
+        alert_payload = {
+            "user_id": user_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "severity": severity,
-            "messages": messages
+            "messages": messages,
+            "drift_level": drift_result.drift_level,
+            "latest_fall_risk": risk_history[-1].fall_risk_score if risk_history else None
         }
+
+        # 🔥 PUSH TO FIREBASE
+        push_to_firebase("caregiver_alerts", alert_payload)
+
+        return alert_payload
 
     # =========================
     # INTERNAL HELPERS
@@ -113,18 +123,12 @@ if __name__ == "__main__":
 
     alert_engine = CaregiverAlertGenerator()
 
-    # -------------------------
-    # Simulated risk history
-    # -------------------------
     risk_history = [
-        RiskSnapshot(datetime.utcnow(), 42.0),
-        RiskSnapshot(datetime.utcnow(), 55.0),
-        RiskSnapshot(datetime.utcnow(), 68.0),
+        RiskSnapshot(datetime.now(timezone.utc), 42.0),
+        RiskSnapshot(datetime.now(timezone.utc), 55.0),
+        RiskSnapshot(datetime.now(timezone.utc), 68.0),
     ]
 
-    # -------------------------
-    # Simulated drift result
-    # -------------------------
     drift_result = DriftResult(
         drift_level="High",
         alerts=[
@@ -133,16 +137,11 @@ if __name__ == "__main__":
         ]
     )
 
-    # -------------------------
-    # Generate caregiver alert
-    # -------------------------
-    caregiver_alert = alert_engine.generate_alert(
+    alert = alert_engine.generate_alert(
+        user_id="ELDER_001",
         risk_history=risk_history,
         drift_result=drift_result
     )
 
-    print("Caregiver Alert:")
-    print("Severity:", caregiver_alert["severity"])
-    print("Messages:")
-    for msg in caregiver_alert["messages"]:
-        print("-", msg)
+    print("Caregiver Alert Generated & Stored:")
+    print(alert)

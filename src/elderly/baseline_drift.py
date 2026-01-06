@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List
 
+from src.utils.firebase_client import push_to_firebase
+
 # =========================
 # DATA STRUCTURE
 # =========================
@@ -35,11 +37,9 @@ class BaselineDriftDetector:
     # -------------------------
     def compute_baseline(self, start_day):
         baseline_events = []
-
         for i in range(self.baseline_days):
             day = start_day + timedelta(days=i)
             baseline_events.extend(self.daily_events.get(day, []))
-
         return self._extract_metrics(baseline_events)
 
     # -------------------------
@@ -47,17 +47,15 @@ class BaselineDriftDetector:
     # -------------------------
     def compute_current_week(self, end_day):
         current_events = []
-
         for i in range(7):
             day = end_day - timedelta(days=i)
             current_events.extend(self.daily_events.get(day, []))
-
         return self._extract_metrics(current_events)
 
     # -------------------------
-    # Drift detection
+    # Drift detection + Firebase
     # -------------------------
-    def detect_drift(self, baseline, current):
+    def detect_drift(self, user_id: str, baseline, current):
         drift_score = 0
         alerts = []
 
@@ -81,11 +79,22 @@ class BaselineDriftDetector:
         if not alerts:
             alerts.append("No significant mobility drift detected.")
 
-        return {
+        result = {
+            "user_id": user_id,
+            "baseline_metrics": baseline,
+            "current_metrics": current,
             "drift_score": drift_score,
             "drift_level": drift_level,
             "alerts": alerts
         }
+
+        # 🔥 PUSH TO FIREBASE
+        push_to_firebase(
+            collection="elderly_baseline_drift",
+            data=result
+        )
+
+        return result
 
     # =========================
     # INTERNAL HELPERS
@@ -118,6 +127,7 @@ if __name__ == "__main__":
 
     detector = BaselineDriftDetector(baseline_days=7)
     today = datetime.now().date()
+    USER_ID = "ELD_001"
 
     # -------------------------
     # Simulated baseline (healthy)
@@ -167,7 +177,11 @@ if __name__ == "__main__":
     baseline_metrics = detector.compute_baseline(today - timedelta(days=14))
     current_metrics = detector.compute_current_week(today)
 
-    result = detector.detect_drift(baseline_metrics, current_metrics)
+    result = detector.detect_drift(
+        user_id=USER_ID,
+        baseline=baseline_metrics,
+        current=current_metrics
+    )
 
     print("Baseline Metrics:", baseline_metrics)
     print("Current Week Metrics:", current_metrics)
